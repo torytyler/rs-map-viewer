@@ -25,6 +25,15 @@ export const isIos = checkIos();
 
 export const isWallpaperEngine = !!window.wallpaperRegisterAudioListener;
 
+const searchParams =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : undefined;
+
+/** Running inside the macOS screen saver (see macos/Saver). */
+export const isScreenSaver = searchParams?.has("saver") ?? false;
+
+/** Reduced profile used for secondary displays / small previews. */
+export const isLiteMode = searchParams?.has("lite") ?? false;
+
 export const isTouchDevice = !!(
     navigator.maxTouchPoints || "ontouchstart" in document.documentElement
 );

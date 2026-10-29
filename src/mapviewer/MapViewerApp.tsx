@@ -3,10 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { registerSerializer } from "threads";
 import WebFont from "webfontloader";
 
+import { AmbientDirector } from "../ambient/AmbientDirector";
+import { parseAmbientOptions } from "../ambient/AmbientConfig";
 import { OsrsLoadingBar } from "../components/rs/loading/OsrsLoadingBar";
 import { DownloadProgress } from "../rs/cache/CacheFiles";
 import { formatBytes } from "../util/BytesUtil";
-import { isIos, isWallpaperEngine } from "../util/DeviceUtil";
+import { isIos, isLiteMode, isScreenSaver, isWallpaperEngine } from "../util/DeviceUtil";
 import { fetchCacheList, loadCacheFiles } from "./Caches";
 import { MapViewer } from "./MapViewer";
 import { MapViewerContainer } from "./MapViewerContainer";
@@ -26,7 +28,11 @@ WebFont.load({
 
 const cachesPromise = fetchCacheList();
 
-const workerPool = RenderDataWorkerPool.create(isWallpaperEngine ? 1 : 4);
+// A screen saver can run one viewer per display, so keep the pool small there and
+// tiny on secondary displays.
+const workerPool = RenderDataWorkerPool.create(
+    isWallpaperEngine || isLiteMode ? 1 : isScreenSaver ? 2 : 4,
+);
 
 function MapViewerApp() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -48,7 +54,13 @@ function MapViewerApp() {
             }
 
             const cacheNameParam = searchParams.get("cache");
+            const ambientOptions = parseAmbientOptions(searchParams);
+            const legacyInfo = cacheList.caches.find((cache) => cache.name.startsWith("rs2-295"));
+
             let cacheInfo = cacheList.latest;
+            if (ambientOptions?.era === "legacy" && legacyInfo) {
+                cacheInfo = legacyInfo;
+            }
             if (cacheNameParam) {
                 const foundCache = cacheList.caches.find((cache) => cache.name === cacheNameParam);
                 if (foundCache) {
@@ -83,6 +95,30 @@ function MapViewerApp() {
                 cache,
             );
             mapViewer.applySearchParams(searchParams);
+
+            if (ambientOptions) {
+                // Switching eras means loading a different cache into the live
+                // viewer, exactly like the cache dropdown in the debug panel.
+                mapViewer.ambient = new AmbientDirector(mapViewer, {
+                    ...ambientOptions,
+                    latestCache: cacheInfo.name,
+                    legacyCache: legacyInfo?.name,
+                    switchEra: async (cacheName: string) => {
+                        const target = cacheList.caches.find((c) => c.name === cacheName);
+                        if (!target) {
+                            return false;
+                        }
+                        const [loadedCache, npcSpawns] = await Promise.all([
+                            loadCacheFiles(target),
+                            fetchNpcSpawns(getNpcSpawnsUrl(target)),
+                        ]);
+                        mapViewer.npcSpawns = npcSpawns;
+                        mapViewer.initCache(loadedCache);
+                        return true;
+                    },
+                });
+            }
+
             mapViewer.init();
 
             setDownloadProgress(undefined);
@@ -115,7 +151,7 @@ function MapViewerApp() {
             </div>
         );
     } else if (mapViewer) {
-        content = <MapViewerContainer mapViewer={mapViewer} />;
+        content = <MapViewerContainer mapViewer={mapViewer} ambient={mapViewer.ambient} />;
     }
 
     return <div className="App max-height">{content}</div>;

@@ -3,6 +3,7 @@ import { vec4 } from "gl-matrix";
 import { MapFileIndex, getMapSquareId } from "../rs/map/MapFileIndex";
 import { Scene } from "../rs/scene/Scene";
 import { Camera } from "./Camera";
+import { Npc } from "./webgl/npc/Npc";
 
 function getMapDistance(x: number, z: number, mapX: number, mapY: number): number {
     const centerX = mapX * Scene.MAP_SQUARE_SIZE + 32;
@@ -17,6 +18,9 @@ type LoadMapFunction = (mapX: number, mapY: number) => void;
 export interface MapSquare {
     mapX: number;
     mapY: number;
+
+    /** Live NPCs of this map square (only the 3D renderers have them). */
+    readonly npcs?: Npc[];
 
     canRender(frameCount: number): boolean;
 

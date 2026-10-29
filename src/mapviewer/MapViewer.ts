@@ -25,6 +25,7 @@ import { MapViewerRendererType, createRenderer } from "./MapViewerRenderers";
 import { NpcSpawn } from "./data/npc/NpcSpawn";
 import { ObjSpawn } from "./data/obj/ObjSpawn";
 import { RenderDataWorkerPool } from "./worker/RenderDataWorkerPool";
+import type { AmbientDirector } from "../ambient/AmbientDirector";
 
 const DEFAULT_RENDER_DISTANCE = isWallpaperEngine ? 512 : 128;
 
@@ -37,6 +38,9 @@ export class MapViewer {
     pathfinder: Pathfinder = new Pathfinder();
 
     renderer: MapViewerRenderer;
+
+    /** Set when the app runs in ambient (screen saver) mode. */
+    ambient?: AmbientDirector;
 
     // Cache
     loadedCache!: LoadedCache;
@@ -238,6 +242,10 @@ export class MapViewer {
     }
 
     updateSearchParams(): void {
+        if (this.ambient) {
+            // Ambient mode moves the camera every frame; never mirror it into the URL.
+            return;
+        }
         this.needsSearchParamUpdate = true;
         this.lastTimeSearchParamsUpdated = performance.now();
     }

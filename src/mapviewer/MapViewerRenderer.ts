@@ -49,6 +49,11 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
     queueLoadMap(mapX: number, mapY: number): void {}
 
     handleInput(deltaTime: number) {
+        const ambient = this.mapViewer.ambient;
+        if (ambient) {
+            ambient.update(deltaTime);
+            return;
+        }
         this.handleKeyInput(deltaTime);
         this.handleMouseInput();
         this.handleControllerInput(deltaTime);

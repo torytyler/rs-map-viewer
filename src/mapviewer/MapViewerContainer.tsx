@@ -7,6 +7,7 @@ import { OsrsLoadingBar } from "../components/rs/loading/OsrsLoadingBar";
 import { OsrsMenu, OsrsMenuProps } from "../components/rs/menu/OsrsMenu";
 import { MinimapContainer } from "../components/rs/minimap/MinimapContainer";
 import { WorldMapModal } from "../components/rs/worldmap/WorldMapModal";
+import { AmbientDirector } from "../ambient/AmbientDirector";
 import { RS_TO_DEGREES } from "../rs/MathConstants";
 import { DownloadProgress } from "../rs/cache/CacheFiles";
 import { formatBytes } from "../util/BytesUtil";
@@ -18,16 +19,17 @@ import { MapViewerRenderer } from "./MapViewerRenderer";
 
 interface MapViewerContainerProps {
     mapViewer: MapViewer;
+    ambient?: AmbientDirector;
 }
 
-export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.Element {
+export function MapViewerContainer({ mapViewer, ambient }: MapViewerContainerProps): JSX.Element {
     const [searchParams, setSearchParams] = useSearchParams();
 
     const [renderer, setRenderer] = useState<MapViewerRenderer>(mapViewer.renderer);
 
     const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>();
 
-    const [hideUi, setHideUi] = useState(false);
+    const [hideUi, setHideUi] = useState(ambient !== undefined);
     const [fps, setFps] = useState(0);
     const [cameraYaw, setCameraYaw] = useState(mapViewer.camera.getYaw());
     const [isWorldMapOpen, setWorldMapOpen] = useState<boolean>(false);
@@ -37,6 +39,12 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
     const requestRef = useRef<number | undefined>();
 
     const animate = (time: DOMHighResTimeStamp) => {
+        if (ambient) {
+            // The ambient director owns the camera; no HUD, menus or URL updates.
+            requestRef.current = requestAnimationFrame(animate);
+            return;
+        }
+
         // Wait for 200ms before updating search params
         if (
             mapViewer.needsSearchParamUpdate &&
@@ -71,6 +79,14 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
         requestRef.current = requestAnimationFrame(animate);
         return () => cancelAnimationFrame(requestRef.current!);
     }, [searchParams, hideUi]);
+
+    useEffect(() => {
+        if (!ambient) {
+            return;
+        }
+        ambient.start();
+        return () => ambient.stop();
+    }, [ambient]);
 
     const resetCameraYaw = useCallback(() => {
         mapViewer.camera.setYaw(0);
@@ -139,15 +155,17 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
             {menuProps && <OsrsMenu {...menuProps} />}
 
-            <MapViewerControls
-                renderer={renderer}
-                hideUi={hideUi}
-                setRenderer={setRenderer}
-                setHideUi={setHideUi}
-                setDownloadProgress={setDownloadProgress}
-            />
+            {!ambient && (
+                <MapViewerControls
+                    renderer={renderer}
+                    hideUi={hideUi}
+                    setRenderer={setRenderer}
+                    setHideUi={setHideUi}
+                    setDownloadProgress={setDownloadProgress}
+                />
+            )}
 
-            {!hideUi && (
+            {!ambient && !hideUi && (
                 <span>
                     <div className="hud left-top">
                         <MinimapContainer
@@ -171,7 +189,7 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                 </span>
             )}
 
-            {!hideUi && isTouchDevice && (
+            {!ambient && !hideUi && isTouchDevice && (
                 <div className="joystick-container left">
                     <Joystick
                         size={75}
@@ -183,7 +201,7 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                     ></Joystick>
                 </div>
             )}
-            {!hideUi && isTouchDevice && (
+            {!ambient && !hideUi && isTouchDevice && (
                 <div className="joystick-container right">
                     <Joystick
                         size={75}
