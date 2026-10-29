@@ -2,6 +2,7 @@ import { MapViewer } from "../mapviewer/MapViewer";
 import { AmbientOverlay } from "./AmbientOverlay";
 import {
     Pose,
+    PoseSmoother,
     applyPose,
     createRandom,
     distance,
@@ -66,6 +67,7 @@ const RECENT_ZONE_MEMORY = 8;
 export class AmbientDirector {
     private readonly random: () => number;
     private readonly overlay: AmbientOverlay;
+    private readonly smoother = new PoseSmoother(0.14);
 
     private phase: Phase = "idle";
     private phaseTime = 0;
@@ -84,6 +86,7 @@ export class AmbientDirector {
     private eraSwitchTarget?: "latest" | "legacy";
     private npcLostTime = 0;
     private blackTime = 0;
+    private lastDeltaTime = 1 / 30;
 
     private readonly eraMode: "latest" | "legacy" | "mixed";
     private readonly latestCache: string;
@@ -170,6 +173,7 @@ export class AmbientDirector {
     /** Called once per rendered frame, before the camera is used. */
     update(deltaTimeMs: number): void {
         const deltaTime = Math.min(deltaTimeMs, 250) / 1000;
+        this.lastDeltaTime = deltaTime;
         this.phaseTime += deltaTime;
         this.overlay.update(deltaTime);
         this.updateDebug(deltaTime);
@@ -327,7 +331,8 @@ export class AmbientDirector {
         this.phaseTime = 0;
 
         if (this.options.labels) {
-            this.overlay.showLabel(zone.name + this.eraLabel(), 4.5);
+            const fade = this.fadeIn ? this.options.fadeSeconds : 0.35;
+            this.overlay.showLabel(zone.name + this.eraLabel(), 5, fade);
         }
     }
 
@@ -478,12 +483,18 @@ export class AmbientDirector {
     // MARK: - Helpers
 
     private teleport(pose: Pose): void {
-        this.applyPose(pose);
+        this.smoother.reset(pose);
+        this.applyPose(pose, true);
     }
 
-    private applyPose(pose: Pose): void {
-        applyPose(this.mapViewer.camera, pose);
-        this.lastPose = pose;
+    /**
+     * All camera movement goes through here: the target pose is low-passed so map
+     * hitches, NPC tile steps and phase changes never show up as jitter.
+     */
+    private applyPose(pose: Pose, snap = false): void {
+        const smoothed = snap ? pose : this.smoother.update(pose, this.lastDeltaTime);
+        applyPose(this.mapViewer.camera, smoothed);
+        this.lastPose = smoothed;
     }
 
     private prefetchAhead(pose: Pose, lookAheadTiles: number): void {

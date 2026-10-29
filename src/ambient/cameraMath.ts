@@ -160,3 +160,42 @@ export function pickWeighted<T>(random: () => number, items: readonly [T, number
     }
     return items[items.length - 1][0];
 }
+
+
+/**
+ * Critically-damped-ish low pass for camera poses. The motions are already
+ * analytic, but this removes step noise (NPC tiles, map-load hitches, phase
+ * changes) without adding noticeable latency.
+ */
+export class PoseSmoother {
+    private current?: Pose;
+
+    constructor(private readonly timeConstant = 0.14) {}
+
+    reset(pose: Pose): void {
+        this.current = { ...pose };
+    }
+
+    get value(): Pose | undefined {
+        return this.current;
+    }
+
+    update(target: Pose, deltaTime: number): Pose {
+        if (!this.current) {
+            this.current = { ...target };
+            return this.current;
+        }
+        const dt = clamp(deltaTime, 0, 0.25);
+        const k = 1 - Math.exp(-dt / this.timeConstant);
+        const cur = this.current;
+        this.current = {
+            x: lerp(cur.x, target.x, k),
+            z: lerp(cur.z, target.z, k),
+            height: lerp(cur.height, target.height, k),
+            yaw: lerpYaw(cur.yaw, target.yaw, k),
+            pitch: lerp(cur.pitch, target.pitch, k),
+            fov: lerp(cur.fov, target.fov, k),
+        };
+        return this.current;
+    }
+}

@@ -61,7 +61,7 @@ export function parseAmbientOptions(params: URLSearchParams): AmbientOptions | u
     // The System Settings preview pane runs on a tiny window; keep it cheap.
     const preview = boolParam(params, "preview", false);
     const renderDistance = clamp(numberParam(params, "distance", preview ? 192 : 320), 64, 512);
-    const fps = clamp(numberParam(params, "fps", preview ? 20 : 24), 5, 120);
+    const fps = clamp(numberParam(params, "fps", preview ? 20 : 30), 5, 120);
 
     return {
         dwellSeconds: clamp(numberParam(params, "dwell", 30), 5, 900),

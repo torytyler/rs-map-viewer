@@ -24,8 +24,16 @@ function arg(name, fallback) {
 
 const PORT = parseInt(arg("port", "3100"), 10);
 const HOST = arg("host", "127.0.0.1");
-const ROOT = path.resolve(projectRoot, arg("root", "build"));
-const CACHES = path.resolve(projectRoot, arg("caches", "caches"));
+function resolveDir(value, fallback) {
+    const candidate = path.resolve(process.cwd(), value ?? fallback);
+    if (fs.existsSync(candidate)) {
+        return candidate;
+    }
+    return path.resolve(projectRoot, value ?? fallback);
+}
+
+const ROOT = resolveDir(arg("root", undefined), "build");
+const CACHES = resolveDir(arg("caches", undefined), "caches");
 
 const MIME = {
     ".html": "text/html; charset=utf-8",

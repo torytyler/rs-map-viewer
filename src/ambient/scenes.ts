@@ -119,7 +119,7 @@ function createOrbitScene(
     const height = entry.height;
     const fov = entry.fov;
     // A third to a full sweep during the dwell, either direction.
-    const sweep = range(random, 0.3, 1.0) * TAU * (random() < 0.5 ? -1 : 1);
+    const sweep = range(random, 0.22, 0.8) * TAU * (random() < 0.5 ? -1 : 1);
     const radiansPerSecond = sweep / Math.max(duration, 1);
     const bob = range(random, 0.03, 0.08);
     const wobble = range(random, 6, 16) * DEGREE;
@@ -152,7 +152,7 @@ function createPanScene(
     duration: number,
     entry: Pose,
 ): Scene {
-    const sweep = range(random, 20, 55) * DEGREE * (random() < 0.5 ? -1 : 1);
+    const sweep = range(random, 16, 42) * DEGREE * (random() < 0.5 ? -1 : 1);
 
     return {
         kind: "pan",
@@ -163,9 +163,9 @@ function createPanScene(
             return {
                 x: entry.x,
                 z: entry.z,
-                height: entry.height + Math.sin(time * 0.17) * entry.height * 0.02,
+                height: entry.height + Math.sin(time * 0.11) * entry.height * 0.015,
                 yaw: normalizeYaw(entry.yaw + sweep * k),
-                pitch: entry.pitch + Math.sin(time * 0.09) * 14,
+                pitch: entry.pitch + Math.sin(time * 0.07) * 10,
                 fov: entry.fov,
             };
         },
@@ -180,8 +180,8 @@ function createDriftScene(
 ): Scene {
     const heading = ((entry.yaw - 1024) * TAU) / 2048;
     const forward = { dx: -Math.sin(heading), dz: -Math.cos(heading) };
-    const speed = range(random, 1.4, 3.2);
-    const yawDrift = range(random, -5, 5) * DEGREE;
+    const speed = range(random, 0.9, 2.2);
+    const yawDrift = range(random, -3.5, 3.5) * DEGREE;
     const pitch = Math.min(entry.pitch, pitchFromTilt(20));
 
     return {
@@ -193,8 +193,8 @@ function createDriftScene(
             return {
                 x: entry.x + forward.dx * travelled,
                 z: entry.z + forward.dz * travelled,
-                height: entry.height + Math.sin(time * 0.21) * 1.2,
-                yaw: normalizeYaw(entry.yaw + yawDrift * Math.sin(time * 0.05)),
+                height: entry.height + Math.sin(time * 0.13) * 0.9,
+                yaw: normalizeYaw(entry.yaw + yawDrift * Math.sin(time * 0.04)),
                 pitch,
                 fov: entry.fov,
             };
@@ -243,7 +243,9 @@ function createNpcScene(zone: Zone, random: () => number, entry: Pose, npc: NpcT
     const startAngle = Math.atan2(entry.z - zone.z, entry.x - zone.x);
     const angularSpeed = range(random, 1.2, 3.6) * DEGREE * (random() < 0.5 ? -1 : 1);
     const fov = clamp(entry.fov - 4, 45, 60);
-    const settleSeconds = 3;
+    const settleSeconds = 3.5;
+    const smoothed = { x: 0, z: 0, ready: false };
+    let lastTime = 0;
 
     const follow = (position: { x: number; z: number }, angle: number, time: number): Pose =>
         lookAtPose(
@@ -262,12 +264,25 @@ function createNpcScene(zone: Zone, random: () => number, entry: Pose, npc: NpcT
         label: npc.name,
         npc,
         poseAt(time: number): Pose {
-            const position = npc.position();
-            if (!position) {
+            const target = npc.position();
+            if (!target) {
                 return entry;
             }
+
+            const deltaTime = Math.max(0, Math.min(time - lastTime, 0.25));
+            lastTime = time;
+            if (!smoothed.ready) {
+                smoothed.x = target.x;
+                smoothed.z = target.z;
+                smoothed.ready = true;
+            } else {
+                const k = 1 - Math.exp(-deltaTime / 0.22);
+                smoothed.x = smoothed.x + (target.x - smoothed.x) * k;
+                smoothed.z = smoothed.z + (target.z - smoothed.z) * k;
+            }
+
             const angle = startAngle + angularSpeed * time;
-            const pose = follow(position, angle, time);
+            const pose = follow({ x: smoothed.x, z: smoothed.z }, angle, time);
             // Ease out of the landing pose into the follow shot.
             return lerpPose(entry, pose, smoothstep(0, settleSeconds, time));
         },
@@ -301,8 +316,9 @@ export function createFlight(from: Pose, to: Pose, zone: Zone, random: () => num
     const nx = distance > 0 ? -dz / distance : 0;
     const nz = distance > 0 ? dx / distance : 0;
 
-    const speed = range(random, 32, 50);
-    const duration = clamp(distance / speed, 5.5, 26);
+    // Slow and cinematic: roughly 15-24 tiles per second, never shorter than 9s.
+    const speed = range(random, 15, 24);
+    const duration = clamp(distance / speed, 9, 34);
 
     return {
         from,
@@ -311,8 +327,8 @@ export function createFlight(from: Pose, to: Pose, zone: Zone, random: () => num
         duration,
         controlX: (from.x + to.x) / 2 + nx * bend,
         controlZ: (from.z + to.z) / 2 + nz * bend,
-        peakHeight: clamp(distance * 0.2, 26, 150),
-        flightPitch: pitchFromTilt(range(random, 30, 44)),
+        peakHeight: clamp(distance * 0.16, 22, 120),
+        flightPitch: pitchFromTilt(range(random, 26, 38)),
     };
 }
 
@@ -347,8 +363,8 @@ export function flightPoseAt(flight: Flight, progress: number): Pose {
     const tangentZ = quadraticDerivative(flight.from.z, flight.controlZ, flight.to.z, t);
     const travelYaw = yawFromForward(tangentX, tangentZ);
 
-    const startBlend = smoothstep(0, 0.14, t);
-    const endBlend = smoothstep(0.7, 1, t);
+    const startBlend = smoothstep(0, 0.22, t);
+    const endBlend = smoothstep(0.62, 1, t);
 
     let yaw = flight.from.yaw + shortestDelta(flight.from.yaw, travelYaw) * startBlend;
     yaw += shortestDelta(yaw, flight.to.yaw) * endBlend;
@@ -359,7 +375,7 @@ export function flightPoseAt(flight: Flight, progress: number): Pose {
         flight.to.pitch * endBlend;
 
     const fov =
-        flight.from.fov + (flight.to.fov - flight.from.fov) * t + Math.sin(Math.PI * t) * 6;
+        flight.from.fov + (flight.to.fov - flight.from.fov) * t + Math.sin(Math.PI * t) * 4;
 
     return { x, z, height, yaw: normalizeYaw(yaw), pitch, fov };
 }

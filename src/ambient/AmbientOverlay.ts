@@ -10,7 +10,7 @@ export class AmbientOverlay {
     private readonly debug: HTMLDivElement;
 
     private labelRemaining = 0;
-    private labelDuration = 0;
+    private labelDelay = 0;
 
     constructor(private readonly showDebug: boolean) {
         this.root = document.createElement("div");
@@ -43,7 +43,8 @@ export class AmbientOverlay {
             color: "#ffd93b",
             textShadow: "0 2px 0 #3d2b00, 0 0 18px rgba(0,0,0,0.9)",
             opacity: "0",
-            transition: "opacity 700ms ease",
+            transform: "translateY(8px)",
+            transition: "opacity 900ms ease, transform 1200ms cubic-bezier(0.22, 1, 0.36, 1)",
         } as CSSStyleDeclaration);
 
         this.debug = document.createElement("div");
@@ -70,16 +71,20 @@ export class AmbientOverlay {
         this.fade.style.opacity = String(Math.max(0, Math.min(1, opacity)));
     }
 
-    showLabel(text: string, seconds: number): void {
+    /** `delay` lets the caption wait for the fade-in to finish. */
+    showLabel(text: string, seconds: number, delay = 0): void {
         this.label.textContent = text;
-        this.label.style.opacity = "1";
-        this.labelDuration = seconds;
+        this.label.style.opacity = "0";
+        this.label.style.transform = "translateY(8px)";
         this.labelRemaining = seconds;
+        this.labelDelay = delay;
     }
 
     hideLabel(): void {
         this.label.style.opacity = "0";
+        this.label.style.transform = "translateY(8px)";
         this.labelRemaining = 0;
+        this.labelDelay = 0;
     }
 
     setDebug(text: string): void {
@@ -90,6 +95,15 @@ export class AmbientOverlay {
     }
 
     update(deltaTime: number): void {
+        if (this.labelDelay > 0) {
+            this.labelDelay -= deltaTime;
+            if (this.labelDelay > 0) {
+                return;
+            }
+            this.label.style.opacity = "1";
+            this.label.style.transform = "translateY(0)";
+        }
+
         if (this.labelRemaining > 0) {
             this.labelRemaining -= deltaTime;
             const fadeWindow = 1.1;
