@@ -1,5 +1,11 @@
 # RuneScape Map Viewer
 
+> **Fork notice.** This fork is the engine behind the *RuneScape World* macOS
+> screen saver: **[torytyler/osrs-map-screensaver](https://github.com/torytyler/osrs-map-screensaver)**.
+> Everything added here is opt-in via `?ambient=1` and lives in [`src/ambient/`](src/ambient) —
+> an ambient camera director (zone rotation, flights, NPC following, era switching).
+> Without the `ambient` parameter the viewer behaves exactly like upstream.
+
 [Website](https://osrs.world) | [Discord](https://discord.gg/WfEWPE5wUd)
 
 A webapp for exploring current and historical versions of RuneScape.
