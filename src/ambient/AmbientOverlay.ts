@@ -4,6 +4,7 @@
  * triggers a re-render.
  */
 export class AmbientOverlay {
+    private currentFade = 1;
     private readonly root: HTMLDivElement;
     private readonly fade: HTMLDivElement;
     private readonly label: HTMLDivElement;
@@ -67,8 +68,14 @@ export class AmbientOverlay {
         document.body.appendChild(this.root);
     }
 
+    /** Current fade-to-black opacity (0 = clear). */
+    get fadeOpacity(): number {
+        return this.currentFade;
+    }
+
     setFade(opacity: number): void {
-        this.fade.style.opacity = String(Math.max(0, Math.min(1, opacity)));
+        this.currentFade = Math.max(0, Math.min(1, opacity));
+        this.fade.style.opacity = String(this.currentFade);
     }
 
     /** `delay` lets the caption wait for the fade-in to finish. */

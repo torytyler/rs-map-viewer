@@ -48,6 +48,7 @@ function parseEra(raw: string | null): "latest" | "legacy" | "mixed" {
  *   &npc=0.5                   chance of following an NPC
  *   &minflight=140&maxflight=900  flight distance window, outside it we cut
  *   &labels=0&debug=1&seed=42
+ *   &nosky=1                   never show unmapped space (tilt down / zoom in)
  */
 export function parseAmbientOptions(params: URLSearchParams): AmbientOptions | undefined {
     const ambient = params.get("ambient");
@@ -76,6 +77,7 @@ export function parseAmbientOptions(params: URLSearchParams): AmbientOptions | u
         maxFlightDistance: clamp(numberParam(params, "maxflight", 950), 0, 5000),
         minFlightDistance: clamp(numberParam(params, "minflight", 140), 0, 5000),
         npcChance: clamp(numberParam(params, "npc", 0.5), 0, 1),
+        hideSky: boolParam(params, "nosky", false),
         era: parseEra(params.get("era")),
         eraEvery: Math.round(clamp(numberParam(params, "eraevery", 4), 1, 50)),
         forceZone: named?.name ?? explicitZone ?? undefined,

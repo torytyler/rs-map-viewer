@@ -11,6 +11,7 @@ import {
     smoothstep,
 } from "./cameraMath";
 import { MapSquareLike, findNpcTarget } from "./NpcFinder";
+import { SkyGuard, SkyGuardState, createTerrainLookup } from "./SkyGuard";
 import {
     Flight,
     Scene,
@@ -41,6 +42,8 @@ export interface AmbientOptions {
     forceZone?: string;
     /** Fog band at the edge of the render distance, in tiles. */
     fogDepth: number;
+    /** Keep unmapped space (sky, void beyond the streamed terrain) out of frame. */
+    hideSky?: boolean;
     /** Sky colour as 0xRRGGBB. */
     skyColor: number;
     /** Era rotation: "latest" | "legacy" | "mixed" (default "mixed"). */
@@ -68,6 +71,7 @@ export class AmbientDirector {
     private readonly random: () => number;
     private readonly overlay: AmbientOverlay;
     private readonly smoother = new PoseSmoother(0.14);
+    private skyGuard?: SkyGuard;
 
     private phase: Phase = "idle";
     private phaseTime = 0;
@@ -86,6 +90,8 @@ export class AmbientDirector {
     private eraSwitchTarget?: "latest" | "legacy";
     private npcLostTime = 0;
     private blackTime = 0;
+    private skyPrefetchFrames = 0;
+    private skyVetoes = 0;
     private lastDeltaTime = 1 / 30;
 
     private readonly eraMode: "latest" | "legacy" | "mixed";
@@ -130,10 +136,24 @@ export class AmbientDirector {
             renderer.fogDepth = this.options.fogDepth;
         }
 
+        if (this.options.hideSky) {
+            // Terrain is streamed `renderDistance` tiles out and starts fading into
+            // the sky `fogDepth` tiles before that, so stop short of the fade band.
+            const safeRadius = Math.max(
+                96,
+                this.mapViewer.renderDistance - Math.max(this.options.fogDepth, 32),
+            );
+            this.skyGuard = new SkyGuard(
+                createTerrainLookup(this.mapViewer.renderer.mapManager),
+                safeRadius,
+            );
+        }
+
         // Debug/automation handle (used by the dev harness and smoke tests).
         (window as any).__ambient = {
             state: () => this.debugState(),
             skip: () => this.beginTransition(),
+            sky: (): SkyGuardState | undefined => this.skyGuard?.debugState,
         };
 
         const zone = this.pickInitialZone();
@@ -162,6 +182,8 @@ export class AmbientDirector {
             },
             fps: Math.round(this.mapViewer.renderer.stats.frameTimeFps),
             maps: this.mapViewer.renderer.mapManager.mapSquares.size,
+            fade: Number(this.overlay.fadeOpacity.toFixed(2)),
+            sky: this.skyGuard?.debugState,
         };
     }
 
@@ -181,9 +203,11 @@ export class AmbientDirector {
         switch (this.phase) {
             case "dwell":
                 this.updateDwell(deltaTime);
+                this.prefetchSkyEdge();
                 break;
             case "flight":
                 this.updateFlight();
+                this.prefetchSkyEdge();
                 break;
             case "fade-out":
                 this.updateFadeOut();
@@ -314,6 +338,17 @@ export class AmbientDirector {
     private beginDwell(): void {
         const zone = this.pendingZone!;
         const entry = this.pendingLanding!;
+
+        // A spot whose framing cannot be made void-free (a data hole, the edge of
+        // the map) is not worth showing when the sky guard is on: go elsewhere.
+        if (this.skyGuard && this.skyVetoes < 6) {
+            if (!this.skyGuard.inspect(entry, this.viewAspect()).clean) {
+                this.skyVetoes += 1;
+                this.enterZone(this.chooseNextZone(), true);
+                return;
+            }
+        }
+        this.skyVetoes = 0;
 
         const npc =
             this.random() < this.options.npcChance
@@ -492,9 +527,59 @@ export class AmbientDirector {
      * hitches, NPC tile steps and phase changes never show up as jitter.
      */
     private applyPose(pose: Pose, snap = false): void {
-        const smoothed = snap ? pose : this.smoother.update(pose, this.lastDeltaTime);
+        const framed = this.frame(pose, snap);
+        const smoothed = snap ? framed : this.smoother.update(framed, this.lastDeltaTime);
         applyPose(this.mapViewer.camera, smoothed);
         this.lastPose = smoothed;
+    }
+
+    /** Applies the sky guard (when enabled) to a target pose. */
+    private frame(pose: Pose, snap: boolean): Pose {
+        const guard = this.skyGuard;
+        if (!guard) {
+            return pose;
+        }
+        const aspect = this.viewAspect();
+        return snap ? guard.snapTo(pose, aspect) : guard.guard(pose, aspect, this.lastDeltaTime);
+    }
+
+    private viewAspect(): number {
+        const canvas = this.mapViewer.renderer.canvas;
+        if (!canvas || !canvas.height) {
+            return 16 / 9;
+        }
+        return canvas.width / canvas.height;
+    }
+
+    /**
+     * The map manager only queues squares that are already inside the frustum, so
+     * without this the far edge of a moving shot spends a second or two as a hole
+     * (which the sky guard would then try to zoom away from). Queueing the squares
+     * under the guarded far edge keeps them loaded before they are needed.
+     */
+    private prefetchSkyEdge(): void {
+        const guard = this.skyGuard;
+        if (!guard) {
+            return;
+        }
+        this.skyPrefetchFrames += 1;
+        if (this.skyPrefetchFrames < 6) {
+            return;
+        }
+        this.skyPrefetchFrames = 0;
+
+        const mapManager = this.mapViewer.renderer.mapManager;
+        const seen = new Set<number>();
+        for (const point of guard.edgePrefetchPoints) {
+            const mapX = Math.floor(point.x / 64);
+            const mapY = Math.floor(point.z / 64);
+            const id = (mapX << 8) | mapY;
+            if (seen.has(id)) {
+                continue;
+            }
+            seen.add(id);
+            mapManager.loadMap(mapX, mapY);
+        }
     }
 
     private prefetchAhead(pose: Pose, lookAheadTiles: number): void {
